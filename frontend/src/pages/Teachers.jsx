@@ -47,15 +47,36 @@ const Teachers = () => {
           cancelButtonColor: '#323232',
         });
       } else {
-        await teachersAPI.create(formData);
+        // Create and capture response (contains credentials)
+        const response = await teachersAPI.create(formData);
+        
+        // Check if email failed
+        const { username, password, emailStatus } = response.credentials;
+        let title = 'Teacher Added';
+        let htmlMsg = 'Credentials have been sent to their email.';
+        let icon = 'success';
+
+        if (emailStatus === 'failed') {
+          title = '⚠️ Email Failed';
+          icon = 'warning';
+          htmlMsg = `<span style="color:#ef4444">The server could not send the email.</span><br/>Please copy these credentials manually:`;
+        }
+
         await Swal.fire({
-          icon: 'success',
-          title: 'Teacher Added',
-          text: 'Login credentials have been sent to their email.',
+          icon: icon,
+          title: title,
+          html: `
+            ${htmlMsg}
+            <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin-top: 10px; text-align: left; border: 1px solid #ccc;">
+              <p style="margin: 5px 0"><strong>Username:</strong> ${username}</p>
+              <p style="margin: 5px 0"><strong>Password:</strong> <span style="color: #FC6E20; font-weight:bold">${password}</span></p>
+            </div>
+            <p style="font-size: 12px; color: #666; margin-top: 10px;">* Save this now! You won't see it again. *</p>
+          `,
           background: '#FFE7D0',
           color: '#1B1B1B',
           confirmButtonColor: '#FC6E20',
-          cancelButtonColor: '#323232',
+          confirmButtonText: 'I have copied it'
         });
       }
       fetchTeachers();
@@ -79,7 +100,7 @@ const Teachers = () => {
     setFormData({
       full_name: teacher.full_name,
       email: teacher.email || '',
-      teacher_id: teacher.username, // Username stores the ID
+      teacher_id: teacher.username, 
       rfid_uid: teacher.rfid_uid || ''
     });
     setShowModal(true);
@@ -98,28 +119,27 @@ const Teachers = () => {
       confirmButtonColor: '#FC6E20',
       cancelButtonColor: '#323232',
     });
+
     if (!result.isConfirmed) return;
+
     try {
       await teachersAPI.delete(id);
       fetchTeachers();
       await Swal.fire({
         icon: 'success',
         title: 'Deleted',
-        text: 'Teacher has been removed.',
         background: '#FFE7D0',
         color: '#1B1B1B',
-        confirmButtonColor: '#FC6E20',
-        cancelButtonColor: '#323232',
+        confirmButtonColor: '#FC6E20'
       });
     } catch (error) {
       await Swal.fire({
         icon: 'error',
         title: 'Delete Failed',
-        text: error.response?.data?.error || 'Failed to delete teacher',
+        text: error.response?.data?.error,
         background: '#FFE7D0',
         color: '#1B1B1B',
-        confirmButtonColor: '#FC6E20',
-        cancelButtonColor: '#323232',
+        confirmButtonColor: '#FC6E20'
       });
     }
   };
@@ -161,15 +181,7 @@ const Teachers = () => {
             <MdSchool className="text-4xl text-brand-orange" />
           </div>
           <h3 className="text-lg font-semibold text-brand-dark">No faculty members yet</h3>
-          <p className="text-brand-charcoal/70 mt-1 mb-6 text-center max-w-sm">
-            Get started by adding your first teacher account. They will receive login credentials via email.
-          </p>
-          <button
-            onClick={() => { resetForm(); setShowModal(true); }}
-            className="text-brand-orange font-semibold hover:text-brand-orange/80 hover:underline"
-          >
-            Add New Teacher
-          </button>
+          <button onClick={() => { resetForm(); setShowModal(true); }} className="text-brand-orange font-semibold hover:underline">Add New Teacher</button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -178,7 +190,6 @@ const Teachers = () => {
               key={t.id}
               className="bg-white p-6 rounded-2xl shadow-md border border-brand-orange/20"
               whileHover={{ y: -4, scale: 1.02 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 18 }}
             >
               <div className="flex items-center gap-4 mb-4">
                 <div className="p-3 bg-brand-beige text-brand-orange rounded-full">
@@ -189,7 +200,6 @@ const Teachers = () => {
                   <p className="text-sm text-brand-charcoal/70">ID: {t.username}</p>
                 </div>
               </div>
-              
               <div className="space-y-2 text-sm text-brand-charcoal mb-6">
                 <div className="flex items-center gap-2">
                   <MdEmail className="text-brand-charcoal/60" />
@@ -200,7 +210,6 @@ const Teachers = () => {
                   <span>{t.rfid_uid || 'No RFID Assigned'}</span>
                 </div>
               </div>
-
               <div className="flex gap-2 pt-4 border-t border-brand-beige">
                 <button onClick={() => handleEdit(t)} className="flex-1 py-2 text-brand-dark bg-brand-beige hover:bg-brand-orange/10 rounded-lg text-sm font-semibold transition-colors">Edit</button>
                 <button onClick={() => handleDelete(t.id)} className="flex-1 py-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg text-sm font-semibold transition-colors">Delete</button>
@@ -210,44 +219,20 @@ const Teachers = () => {
         </div>
       )}
 
-      {/* MODAL */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <motion.div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
-            initial={{ opacity: 0, scale: 0.9, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 0.25, ease: 'easeOut' }}
-          >
+          <motion.div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
             <div className="bg-brand-dark px-6 py-4">
               <h2 className="text-xl font-bold text-brand-beige">{editingTeacher ? 'Edit Teacher' : 'Add New Teacher'}</h2>
             </div>
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-brand-charcoal mb-1">Full Name</label>
-                <input required className="w-full p-3 border border-brand-charcoal/20 rounded-lg bg-white text-brand-dark focus:ring-2 focus:ring-brand-orange outline-none" value={formData.full_name} onChange={e => setFormData({...formData, full_name: e.target.value})} placeholder="e.g. Mr. John Doe" />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-semibold text-brand-charcoal mb-1">Email Address</label>
-                <input type="email" required className="w-full p-3 border border-brand-charcoal/20 rounded-lg bg-white text-brand-dark focus:ring-2 focus:ring-brand-orange outline-none" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="teacher@school.edu" />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-brand-charcoal mb-1">Teacher ID (Username)</label>
-                <input required className="w-full p-3 border border-brand-charcoal/20 rounded-lg font-mono bg-white text-brand-dark focus:ring-2 focus:ring-brand-orange outline-none disabled:bg-brand-beige" value={formData.teacher_id} onChange={e => setFormData({...formData, teacher_id: e.target.value})} placeholder="0000-0000" disabled={!!editingTeacher} />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-brand-charcoal mb-1">RFID UID (Optional)</label>
-                <input className="w-full p-3 border border-brand-charcoal/20 rounded-lg font-mono bg-white text-brand-dark focus:ring-2 focus:ring-brand-orange outline-none" value={formData.rfid_uid} onChange={e => setFormData({...formData, rfid_uid: e.target.value})} placeholder="Scan card..." />
-              </div>
-
+              <div><label className="text-sm font-bold text-brand-charcoal">Full Name</label><input required className="w-full p-3 border rounded-lg bg-white text-brand-dark" value={formData.full_name} onChange={e => setFormData({...formData, full_name: e.target.value})} /></div>
+              <div><label className="text-sm font-bold text-brand-charcoal">Email</label><input type="email" required className="w-full p-3 border rounded-lg bg-white text-brand-dark" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} /></div>
+              <div><label className="text-sm font-bold text-brand-charcoal">Teacher ID</label><input required className="w-full p-3 border rounded-lg font-mono bg-white text-brand-dark" value={formData.teacher_id} onChange={e => setFormData({...formData, teacher_id: e.target.value})} disabled={!!editingTeacher} /></div>
+              <div><label className="text-sm font-bold text-brand-charcoal">RFID UID (Optional)</label><input className="w-full p-3 border rounded-lg font-mono bg-white text-brand-dark" value={formData.rfid_uid} onChange={e => setFormData({...formData, rfid_uid: e.target.value})} /></div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-2 bg-brand-beige text-brand-charcoal rounded-lg hover:bg-brand-charcoal/10 font-medium">Cancel</button>
-                <button type="submit" className="flex-1 py-2 bg-brand-orange text-white rounded-lg hover:bg-brand-orange/90 font-semibold shadow-lg shadow-brand-orange/30">
-                  {editingTeacher ? 'Update' : 'Create & Send Email'}
-                </button>
+                <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-2 bg-brand-beige text-brand-charcoal rounded-lg">Cancel</button>
+                <button type="submit" className="flex-1 py-2 bg-brand-orange text-white rounded-lg font-bold">{editingTeacher ? 'Update' : 'Create'}</button>
               </div>
             </form>
           </motion.div>
