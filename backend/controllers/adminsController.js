@@ -5,18 +5,17 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Configure Email
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com', // Explicitly state the host
-  port: 587,              // Use SSL Port (often allowed when 587 is blocked)
-  secure: false,           // Must be true for port 465
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 });
 
-const generatePassword = (length = 8) => {
+const generatePassword = (length = 10) => {
   const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$";
   let retVal = "";
   for (let i = 0, n = charset.length; i < length; ++i) {
@@ -39,27 +38,27 @@ export const getAllAdmins = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// 2. Create New Admin (With Password Verification)
+// 2. Create Admin (Strict Security)
 export const createAdmin = async (req, res, next) => {
   try {
     const { full_name, email, username, current_password } = req.body;
-    const currentAdminId = req.user.id; // From Token
+    const initiatorId = req.user.id; // ID of the admin making the request
 
-    // A. Validate Input
+    // A. Validate
     if (!full_name || !email || !username || !current_password) {
-      return res.status(400).json({ error: 'All fields including your password are required' });
+      return res.status(400).json({ error: 'All fields and YOUR password are required' });
     }
 
-    // B. Verify Current Admin's Password
-    const { data: currentAdmin, error: fetchError } = await supabase
+    // B. Verify Initiator's Password
+    const { data: initiator, error: fetchError } = await supabase
       .from('admins')
       .select('password_hash')
-      .eq('id', currentAdminId)
+      .eq('id', initiatorId)
       .single();
 
-    if (fetchError || !currentAdmin) return res.status(401).json({ error: 'Authorization failed' });
+    if (fetchError || !initiator) return res.status(401).json({ error: 'Authorization failed' });
 
-    const isMatch = await bcrypt.compare(current_password, currentAdmin.password_hash);
+    const isMatch = await bcrypt.compare(current_password, initiator.password_hash);
     if (!isMatch) return res.status(403).json({ error: 'Incorrect password. Access denied.' });
 
     // C. Generate New Admin Credentials
@@ -70,11 +69,11 @@ export const createAdmin = async (req, res, next) => {
     const { data: newAdmin, error: createError } = await supabase
       .from('admins')
       .insert([{
-        username,          // "0000-0000" format
+        username,
         password_hash: newPasswordHash,
         full_name,
         email,
-        role: 'admin'      // Role is Admin
+        role: 'admin'
       }])
       .select()
       .single();
@@ -82,30 +81,41 @@ export const createAdmin = async (req, res, next) => {
     if (createError) throw createError;
 
     // E. Send Email
-    await transporter.sendMail({
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'Admin Access Granted - Smart Attendance System',
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
-          <h2 style="color: #FC6E20;">Admin Access Granted</h2>
-          <p>Hello <strong>${full_name}</strong>,</p>
-          <p>You have been granted Administrator privileges for the Smart Attendance System.</p>
-          <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>Username:</strong> ${username}</p>
-            <p style="margin: 5px 0;"><strong>Password:</strong> ${newPlainPassword}</p>
+    let emailStatus = 'sent';
+    try {
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: 'Admin Access Granted',
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #FC6E20;">Admin Access Granted</h2>
+            <p>Hello <strong>${full_name}</strong>,</p>
+            <p>You are now an Administrator.</p>
+            <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <p><strong>Username:</strong> ${username}</p>
+              <p><strong>Password:</strong> ${newPlainPassword}</p>
+            </div>
           </div>
-          <p>Please login and change your password immediately for security.</p>
-        </div>
-      `
+        `
+      });
+    } catch (err) {
+      console.error("Email failed:", err);
+      emailStatus = 'failed';
+    }
+
+    // F. Return Credentials (Backup)
+    res.status(201).json({ 
+      message: 'Admin created successfully', 
+      admin: newAdmin,
+      credentials: {
+        username,
+        password: newPlainPassword,
+        emailStatus
+      }
     });
 
-    res.status(201).json({ message: 'Admin created and credentials sent!', admin: newAdmin });
-
-  } catch (error) {
-    console.error("Admin Create Error:", error);
-    next(error);
-  }
+  } catch (error) { next(error); }
 };
 
 // 3. Delete Admin
