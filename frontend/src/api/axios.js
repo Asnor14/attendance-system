@@ -1,7 +1,11 @@
 import axios from 'axios';
 
+// If we are in production (Vercel), use the Render URL.
+// If we are in dev (Localhost), use the local backend.
+const BASE_URL = import.meta.env.VITE_API_URL || 'https://attendance-backend-005i.onrender.com';
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
