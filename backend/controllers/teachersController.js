@@ -7,16 +7,15 @@ dotenv.config();
 
 // Configure Email Transporter
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com', // Explicitly state the host
-  port: 587,              // Use SSL Port (often allowed when 587 is blocked)
-  secure: false,           // Must be true for port 465
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
 });
 
-// Helper: Generate Random Password
 const generatePassword = (length = 8) => {
   const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$";
   let retVal = "";
@@ -40,7 +39,7 @@ export const getAllTeachers = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// 2. Create Teacher Account
+// 2. Create Teacher (Auto-Gen Password & Email)
 export const createTeacher = async (req, res, next) => {
   try {
     const { full_name, email, teacher_id, rfid_uid } = req.body;
@@ -49,12 +48,12 @@ export const createTeacher = async (req, res, next) => {
       return res.status(400).json({ error: 'Full Name, Email, and Teacher ID are required' });
     }
 
-    // 1. Auto-Generate Credentials
+    // Auto-Generate Credentials
     const username = teacher_id;
-    const plainPassword = generatePassword(); // We need to send this back to frontend
+    const plainPassword = generatePassword();
     const password_hash = await bcrypt.hash(plainPassword, 10);
 
-    // 2. Save to Database
+    // Insert into DB
     const { data, error } = await supabase
       .from('admins')
       .insert([{ 
@@ -70,41 +69,39 @@ export const createTeacher = async (req, res, next) => {
 
     if (error) throw error;
 
-    // 3. Try to Send Email (But don't crash if it fails)
+    // Send Email (Fail-safe)
     let emailStatus = 'sent';
     try {
-      const mailOptions = {
+      await transporter.sendMail({
         from: process.env.EMAIL_USER,
         to: email,
-        subject: 'Welcome to Smart Attendance - Your Credentials',
+        subject: 'Faculty Account Created',
         html: `
           <div style="font-family: Arial, sans-serif; padding: 20px;">
-            <h2>Faculty Account Created</h2>
-            <p>Username: <strong>${username}</strong></p>
-            <p>Password: <strong>${plainPassword}</strong></p>
+            <h2 style="color: #4F46E5;">Welcome Faculty</h2>
+            <p>Hello <strong>${full_name}</strong>,</p>
+            <p>Your account has been created.</p>
+            <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <p><strong>Username:</strong> ${username}</p>
+              <p><strong>Password:</strong> ${plainPassword}</p>
+            </div>
+            <p>Please login and change your password immediately.</p>
           </div>
         `
-      };
-      await transporter.sendMail(mailOptions);
+      });
     } catch (emailError) {
-      console.error("⚠️ Email failed to send:", emailError);
+      console.error("Email failed:", emailError);
       emailStatus = 'failed';
     }
 
-    // 4. Return Success + PASSWORD (Critical Backup)
+    // Return credentials so Admin can see them if email fails
     res.status(201).json({ 
       message: 'Teacher created successfully', 
       teacher: data,
-      credentials: {
-        username,
-        password: plainPassword, // Send this back so Admin can see it
-        emailStatus
-      }
+      credentials: { username, password: plainPassword, emailStatus }
     });
 
-  } catch (error) { 
-    next(error); 
-  }
+  } catch (error) { next(error); }
 };
 
 // 3. Update Teacher
@@ -129,26 +126,19 @@ export const updateTeacher = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// 4. Delete Teacher (Safely)
+// 4. Delete Teacher (Safe Delete)
 export const deleteTeacher = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    // Step 1: Unassign this teacher from all schedules
-    // We set 'teacher_id' to NULL for any schedule they are teaching
-    const { error: unassignError } = await supabase
+    // Unassign from schedules first
+    await supabase
       .from('schedules')
       .update({ teacher_id: null })
       .eq('teacher_id', id);
 
-    if (unassignError) throw unassignError;
-
-    // Step 2: Now it is safe to delete the teacher
-    const { error } = await supabase
-      .from('admins')
-      .delete()
-      .eq('id', id);
-
+    // Delete account
+    const { error } = await supabase.from('admins').delete().eq('id', id);
     if (error) throw error;
 
     res.json({ message: 'Teacher deleted successfully' });
