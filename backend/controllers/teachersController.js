@@ -40,7 +40,7 @@ export const getAllTeachers = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// 2. Create Teacher (Auto-Gen & Email)
+// 2. Create Teacher Account
 export const createTeacher = async (req, res, next) => {
   try {
     const { full_name, email, teacher_id, rfid_uid } = req.body;
@@ -49,12 +49,12 @@ export const createTeacher = async (req, res, next) => {
       return res.status(400).json({ error: 'Full Name, Email, and Teacher ID are required' });
     }
 
-    // Auto-Generate Credentials
-    const username = teacher_id; // Use ID as username
-    const plainPassword = generatePassword();
+    // 1. Auto-Generate Credentials
+    const username = teacher_id;
+    const plainPassword = generatePassword(); // We need to send this back to frontend
     const password_hash = await bcrypt.hash(plainPassword, 10);
 
-    // Save to Database
+    // 2. Save to Database
     const { data, error } = await supabase
       .from('admins')
       .insert([{ 
@@ -70,34 +70,39 @@ export const createTeacher = async (req, res, next) => {
 
     if (error) throw error;
 
-    // Send Email
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: email,
-      subject: 'Welcome to Smart Attendance - Your Credentials',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-          <h2 style="color: #4F46E5; text-align: center;">Faculty Account Created</h2>
-          <p>Hello <strong>${full_name}</strong>,</p>
-          <p>Your account for the Smart Attendance System has been successfully created.</p>
-          
-          <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>Username:</strong> ${username}</p>
-            <p style="margin: 5px 0;"><strong>Password:</strong> ${plainPassword}</p>
+    // 3. Try to Send Email (But don't crash if it fails)
+    let emailStatus = 'sent';
+    try {
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: 'Welcome to Smart Attendance - Your Credentials',
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2>Faculty Account Created</h2>
+            <p>Username: <strong>${username}</strong></p>
+            <p>Password: <strong>${plainPassword}</strong></p>
           </div>
-          
-          <p>Please log in and change your password as soon as possible.</p>
-          <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-          <p style="color: #666; font-size: 12px; text-align: center;">This is an automated message. Please do not reply.</p>
-        </div>
-      `
-    };
+        `
+      };
+      await transporter.sendMail(mailOptions);
+    } catch (emailError) {
+      console.error("⚠️ Email failed to send:", emailError);
+      emailStatus = 'failed';
+    }
 
-    await transporter.sendMail(mailOptions);
+    // 4. Return Success + PASSWORD (Critical Backup)
+    res.status(201).json({ 
+      message: 'Teacher created successfully', 
+      teacher: data,
+      credentials: {
+        username,
+        password: plainPassword, // Send this back so Admin can see it
+        emailStatus
+      }
+    });
 
-    res.status(201).json({ message: 'Teacher created and email sent', teacher: data });
   } catch (error) { 
-    console.error("Error:", error);
     next(error); 
   }
 };
